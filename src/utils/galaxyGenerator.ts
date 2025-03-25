@@ -320,7 +320,7 @@ function generateResources(planetType: PlanetType): Resource[] {
   return resources;
 }
 
-function generatePlanet(starName: string, index: number): Planet {
+function generatePlanet(starName: string, index: number, starId: string): Planet {
   const planetTypeInfo = selectRandomType(PLANET_TYPES);
   const planetType = planetTypeInfo.type;
   
@@ -329,9 +329,11 @@ function generatePlanet(starName: string, index: number): Planet {
     name: generatePlanetName(planetType, starName, index),
     type: planetType,
     size: 0.5 + Math.random() * 1.5,
-    orbitDistance: 20 + Math.random() * 100,
     orbitSpeed: 0.1 + Math.random() * 0.5,
-    resources: generateResources(planetType)
+    resources: generateResources(planetType),
+    buildings: [],
+    starId: starId,
+    resourcePatches: []
   };
 }
 
@@ -340,7 +342,7 @@ function generateStarSystem(star: Star): StarSystem {
   const planets: Planet[] = [];
   
   for (let i = 0; i < numPlanets; i++) {
-    planets.push(generatePlanet(star.name, i));
+    planets.push(generatePlanet(star.name, i, star.id));
   }
   
   return {

@@ -1,3 +1,6 @@
+import * as THREE from 'three';
+import { Euler, TypedArray, Vector3 } from "three";
+
 export interface Vector2D {
   x: number;
   y: number;
@@ -43,14 +46,39 @@ export interface StarSystem {
   resources: Resource[];
 }
 
+export interface ResourcePatch {
+  id: string;
+  resourceType: string;
+  position: THREE.Vector3;
+  normal: THREE.Vector3;
+  resource: Resource;
+}
+
 export interface Planet {
   id: string;
   name: string;
   type: PlanetType;
   size: number;
-  orbitDistance: number;
   orbitSpeed: number;
   resources: Resource[];
+  buildings: Building[];
+  resourcePatches: ResourcePatch[];
+  starId: string;
+}
+
+export interface Building {
+  id: number;
+  type: BuildingType;
+  resourceType: string;
+  planetId: string;
+  starId: string;
+  position: Vector3;
+  normal: Vector3;
+  rotation: Euler;
+}
+
+export enum BuildingType {
+  RESOURCE_EXTRACTOR = 'RESOURCE_EXTRACTOR',
 }
 
 export interface Resource {

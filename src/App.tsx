@@ -5,7 +5,7 @@ import { StarSystemView } from './components/StarSystemView';
 import { TopBar } from './components/TopBar';
 import { generateGalaxy } from './utils/galaxyGenerator';
 import { generateInitialFactions } from './utils/factionGenerator';
-import { Star, StarSystem, StarType, Faction, FactionType, Resource } from './types/galaxy';
+import { Star, StarSystem, StarType, Faction, FactionType, Resource, Building } from './types/galaxy';
 import { selectStartingSystem } from './utils/startingSystem';
 
 const AppContainer = styled.div`
@@ -226,6 +226,17 @@ export default function App() {
     setCurrentDate(2500);
   };
 
+  const handleBuildingCreated = (building: Building) => {
+    // find the planet in the galaxy and update the buildings array using planet id
+    console.log(building);
+    const planet = galaxy?.starSystems.find(s => s.star.id === building.starId)?.planets.find(p => p.id === building.planetId);
+    console.log(planet);
+    if (planet) {
+      planet.buildings.push(building);
+      console.log(planet.buildings);
+    }
+  };
+
   const startGame = () => {
     if (!galaxy) return;
 
@@ -419,6 +430,7 @@ export default function App() {
               onBack={handleBackToGalaxy}
               width={dimensions.width}
               height={dimensions.height}
+              onBuildingCreated={handleBuildingCreated}
             />
           )
         )}

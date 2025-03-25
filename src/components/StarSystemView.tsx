@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import styled from '@emotion/styled';
-import { StarSystem, Planet } from '../types/galaxy';
+import { Building, StarSystem, Planet } from '../types/galaxy';
 import { PlanetView } from './PlanetView';
 
 interface StarSystemViewProps {
@@ -8,6 +8,7 @@ interface StarSystemViewProps {
   width: number;
   height: number;
   onBack: () => void;
+  onBuildingCreated: (building: Building) => void;
 }
 
 const Canvas = styled.canvas`
@@ -350,7 +351,7 @@ class SystemRenderer {
   };
 }
 
-export function StarSystemView({ system, width, height, onBack }: StarSystemViewProps) {
+export function StarSystemView({ system, width, height, onBack, onBuildingCreated }: StarSystemViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<SystemRenderer | null>(null);
@@ -405,6 +406,7 @@ export function StarSystemView({ system, width, height, onBack }: StarSystemView
         width={width}
         height={height}
         onBack={() => setSelectedPlanet(null)}
+        onBuildingCreated={onBuildingCreated}
       />
     );
   }
