@@ -173,7 +173,7 @@ class PlanetRenderer {
     this.controls.screenSpacePanning = false;
     this.controls.minDistance = 3;
     this.controls.maxDistance = 10;
-    this.controls.maxPolarAngle = Math.PI / 2;
+    this.controls.maxPolarAngle = Math.PI;
 
     // Setup raycaster
     this.raycaster = new THREE.Raycaster();
@@ -188,7 +188,7 @@ class PlanetRenderer {
     this.resourcePatches.forEach(patch => this.planetMesh.add(patch));
 
     // Get all buildings from the planet
-    this.buildings = this.planet.buildings.map(building => this.createBuilding(building.position, building.normal));
+    this.buildings = this.planet.buildings.map(building => this.createBuilding(building.position, building.normal, building.type));
     this.buildings.forEach(building => this.planetMesh.add(building));
 
     console.log(this.buildings);
@@ -333,7 +333,7 @@ class PlanetRenderer {
     }
   };
 
-  private createBuilding(position: THREE.Vector3, normal: THREE.Vector3): THREE.Mesh {
+  private createBuilding(position: THREE.Vector3, normal: THREE.Vector3, type: BuildingType): THREE.Mesh {
     // Create a simple square building
     const size = 0.05; // Size relative to planet
     const height = 0.1;
@@ -357,6 +357,8 @@ class PlanetRenderer {
     
     // Add a slight random rotation around the normal
     building.rotateZ(Math.random() * Math.PI * 2);
+
+    building.userData.building = type;
     
     return building;
   }
@@ -369,16 +371,27 @@ class PlanetRenderer {
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
-    const intersects = this.raycaster.intersectObjects(this.resourcePatches);
+
+    // check if the raycaster hits a resource patch but also check if it hits a building
+    const intersects = this.raycaster.intersectObjects([...this.resourcePatches, ...this.buildings]);
 
     if (intersects.length > 0) {
+      // check if the any of the intersects are a building
+      const buildingIntersect = intersects.find(intersect => intersect.object.userData.building);
+      if (buildingIntersect) {
+        return;
+      }
+
       const intersect = intersects[0];
-      const resource = intersect.object.userData.resource;
-      
-      // Create building at intersection point
+
+      if (intersect.object.userData.resource) {
+        const resource = intersect.object.userData.resource;
+        
+        // Create building at intersection point
       const building = this.createBuilding(
         intersect.point,
-        intersect.face!.normal
+        intersect.face!.normal,
+        BuildingType.RESOURCE_EXTRACTOR
       );
       
       // Add building to scene
@@ -394,29 +407,28 @@ class PlanetRenderer {
         planetId: this.planet.id,
         starId: this.planet.starId,
         position: intersect.point,
-        normal: intersect.face!.normal,
-        rotation: building.rotation
-      });
-
-      // Hide placement indicator
-      const indicator = document.getElementById('placement-indicator');
-      if (indicator) {
-        indicator.style.display = 'none';
+          normal: intersect.face!.normal,
+          rotation: building.rotation
+        });
       }
-      
-      // Exit build mode
-      this.setBuildMode(false);
     }
   };
 
   private updatePlacementIndicator() {
     this.raycaster.setFromCamera(this.mouse, this.camera);
-    const intersects = this.raycaster.intersectObjects(this.resourcePatches);
+    const intersects = this.raycaster.intersectObjects([...this.resourcePatches, ...this.buildings]);
     
     // Update placement indicator position and validity
     const indicator = document.getElementById('placement-indicator');
     if (indicator) {
       if (intersects.length > 0) {
+        // check if the any of the intersects are a building
+        const buildingIntersect = intersects.find(intersect => intersect.object.userData.building);
+        if (buildingIntersect) {
+          indicator.style.background = 'rgba(255, 0, 0, 0.8)';
+        } else {
+          indicator.style.background = 'rgba(77, 171, 247, 0.8)';
+        }
         const point = intersects[0].point;
         const screenPoint = point.clone().project(this.camera);
         const x = (screenPoint.x + 1) * this.width / 2;
@@ -425,7 +437,6 @@ class PlanetRenderer {
         indicator.style.left = `${x}px`;
         indicator.style.top = `${y}px`;
         indicator.style.display = 'block';
-        indicator.style.background = 'rgba(77, 171, 247, 0.8)';
       } else {
         indicator.style.display = 'none';
       }
@@ -449,9 +460,12 @@ class PlanetRenderer {
       }
     }
 
-    // Reset camera controls when exiting build mode
+    // when exiting build mode set the button text to "Build Resource Extractor"
     if (!enabled) {
-      this.controls.reset();
+      const buildButton = document.getElementById('build-button');
+      if (buildButton) {
+        buildButton.textContent = 'Build Resource Extractor';
+      }
     }
   }
 
