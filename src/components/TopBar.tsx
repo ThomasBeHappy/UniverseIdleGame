@@ -1,78 +1,65 @@
-import React from 'react';
+import React, { ReactNode } from 'react';
 import styled from '@emotion/styled';
 import { Faction } from '../types/galaxy';
 
+export interface TopBarProps {
+  currentDate: number;
+  playerFaction: Faction;
+  ownedSystemCount: number;
+  extraContent?: ReactNode;
+}
+
 const TopBarContainer = styled.div`
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: 60px;
   background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
   display: flex;
   align-items: center;
   padding: 0 20px;
-  color: white;
-  z-index: 1000;
+  backdrop-filter: blur(10px);
+  z-index: 100;
 `;
 
-const Section = styled.div`
+const FactionInfo = styled.div`
   display: flex;
   align-items: center;
-  margin-right: 40px;
+  gap: 20px;
 `;
 
-const Label = styled.span`
-  color: rgba(255, 255, 255, 0.6);
-  margin-right: 8px;
-  font-size: 14px;
-`;
-
-const Value = styled.span`
-  color: white;
-  font-size: 16px;
-  font-weight: 500;
-`;
-
-const FactionName = styled(Value)`
+const FactionName = styled.div`
+  font-size: 18px;
+  font-weight: bold;
   color: ${props => props.color};
-  text-shadow: 0 0 10px ${props => props.color}40;
 `;
 
-const Date = styled(Value)`
-  font-family: monospace;
+const SystemCount = styled.div`
+  font-size: 14px;
+  color: #ced4da;
 `;
 
-interface TopBarProps {
-  currentDate: number; // Year number
-  playerFaction: Faction;
-  ownedSystemCount: number;
-}
+const Date = styled.div`
+  margin-left: auto;
+  font-size: 16px;
+  color: #ced4da;
+`;
 
-export function TopBar({ currentDate, playerFaction, ownedSystemCount }: TopBarProps) {
+export function TopBar({ currentDate, playerFaction, ownedSystemCount, extraContent }: TopBarProps) {
   return (
     <TopBarContainer>
-      <Section>
-        <Label>Year:</Label>
-        <Date>{currentDate}</Date>
-      </Section>
-
-      <Section>
-        <Label>Faction:</Label>
-        <FactionName color={playerFaction.color}>{playerFaction.name}</FactionName>
-      </Section>
-
-      <Section>
-        <Label>Type:</Label>
-        <Value>{playerFaction.type.replace(/_/g, ' ')}</Value>
-      </Section>
-
-      <Section>
-        <Label>Systems:</Label>
-        <Value>{ownedSystemCount}</Value>
-      </Section>
+      <FactionInfo>
+        <FactionName color={playerFaction.color}>
+          {playerFaction.name}
+        </FactionName>
+        <SystemCount>
+          {ownedSystemCount} system{ownedSystemCount !== 1 ? 's' : ''} controlled
+        </SystemCount>
+      </FactionInfo>
+      {extraContent}
+      <Date>Year {currentDate}</Date>
     </TopBarContainer>
   );
 } 

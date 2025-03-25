@@ -5,7 +5,7 @@ import { StarSystemView } from './components/StarSystemView';
 import { TopBar } from './components/TopBar';
 import { generateGalaxy } from './utils/galaxyGenerator';
 import { generateInitialFactions } from './utils/factionGenerator';
-import { Star, StarSystem, StarType, Faction, FactionType } from './types/galaxy';
+import { Star, StarSystem, StarType, Faction, FactionType, Resource } from './types/galaxy';
 import { selectStartingSystem } from './utils/startingSystem';
 
 const AppContainer = styled.div`
@@ -28,13 +28,10 @@ const Title = styled.h1`
 
 const ViewContainer = styled.div`
   position: relative;
-  margin: 20px 0;
+  flex: 1;
   width: 100%;
-  max-width: 1200px;
-  aspect-ratio: 16 / 9;
-  border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+  margin-top: 60px;
 `;
 
 const Container = styled.div`
@@ -44,23 +41,8 @@ const Container = styled.div`
   color: white;
   position: relative;
   overflow: hidden;
-`;
-
-const PreviewControls = styled.div`
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  background: rgba(0, 0, 0, 0.8);
-  padding: 30px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  z-index: 1000;
-  backdrop-filter: blur(8px);
 `;
 
 const Button = styled.button`
@@ -88,6 +70,116 @@ const Button = styled.button`
   }
 `;
 
+const ResourcePanel = styled.div<{ isVisible: boolean }>`
+  position: fixed;
+  top: 60px;
+  right: ${props => props.isVisible ? '0' : '-400px'};
+  width: 400px;
+  height: calc(100vh - 60px);
+  background: rgba(0, 0, 0, 0.8);
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 20px;
+  transition: right 0.3s ease;
+  backdrop-filter: blur(10px);
+  overflow-y: auto;
+  z-index: 1000;
+
+  h2 {
+    color: #4dabf7;
+    margin: 0 0 20px 0;
+    font-size: 24px;
+  }
+`;
+
+const ResourceGroup = styled.div`
+  margin-bottom: 24px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+
+  h3 {
+    color: #74c0fc;
+    margin: 0 0 12px 0;
+    font-size: 18px;
+  }
+`;
+
+const ResourceItem = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+
+  .resource-info {
+    flex-grow: 1;
+  }
+
+  .resource-name {
+    color: #ced4da;
+    font-size: 14px;
+  }
+
+  .resource-amount {
+    color: #74c0fc;
+    font-family: monospace;
+    font-size: 14px;
+  }
+
+  .resource-rate {
+    color: #63e6be;
+    font-family: monospace;
+    font-size: 12px;
+    margin-left: 8px;
+  }
+
+  .resource-location {
+    color: #868e96;
+    font-size: 12px;
+    margin-top: 2px;
+  }
+`;
+
+const ToggleResourcesButton = styled(Button)`
+  margin-left: 16px;
+  padding: 6px 12px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+`;
+
+const PreviewControls = styled.div`
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  z-index: 1000;
+  backdrop-filter: blur(8px);
+`;
+
+interface ResourceLocation {
+  system: string;
+  planet: string;
+}
+
+interface ResourceTotal {
+  amount: number;
+  rate: number;
+  locations: ResourceLocation[];
+}
+
 export default function App() {
   const [galaxy, setGalaxy] = useState<ReturnType<typeof generateGalaxy> | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -99,6 +191,7 @@ export default function App() {
   const [gameStarted, setGameStarted] = useState(false);
   const [isGalaxyView, setIsGalaxyView] = useState(true);
   const [currentDate, setCurrentDate] = useState(2500); // Start in year 2500
+  const [showResources, setShowResources] = useState(false);
 
   useEffect(() => {
     generateNewGalaxy();
@@ -224,6 +317,34 @@ export default function App() {
     };
   };
 
+  // Calculate total resources across all controlled systems
+  const calculateTotalResources = () => {
+    if (!galaxy || !playerFaction) return new Map<string, ResourceTotal>();
+
+    const totals = new Map<string, ResourceTotal>();
+    galaxy.starSystems
+      .filter(system => playerFaction.controlledSystems.has(system.star.id))
+      .forEach(system => {
+        system.planets.forEach(planet => {
+          planet.resources.forEach(resource => {
+            const existing = totals.get(resource.type) || {
+              amount: 0,
+              rate: 0,
+              locations: []
+            };
+            existing.amount += resource.amount;
+            existing.rate += resource.regenerationRate;
+            existing.locations.push({
+              system: system.star.name,
+              planet: planet.name
+            });
+            totals.set(resource.type, existing);
+          });
+        });
+      });
+    return totals;
+  };
+
   if (!galaxy) {
     return <div>Loading galaxy...</div>;
   }
@@ -231,11 +352,38 @@ export default function App() {
   return (
     <Container>
       {gameStarted && playerFaction && (
-        <TopBar
-          currentDate={currentDate}
-          playerFaction={playerFaction}
-          ownedSystemCount={playerFaction.controlledSystems.size}
-        />
+        <>
+          <TopBar
+            currentDate={currentDate}
+            playerFaction={playerFaction}
+            ownedSystemCount={playerFaction.controlledSystems.size}
+            extraContent={
+              <ToggleResourcesButton onClick={() => setShowResources(!showResources)}>
+                {showResources ? '← Hide' : 'Resources →'}
+              </ToggleResourcesButton>
+            }
+          />
+
+          <ResourcePanel isVisible={showResources}>
+            <h2>Empire Resources</h2>
+            {Array.from(calculateTotalResources()).map(([type, data]) => (
+              <ResourceGroup key={type}>
+                <h3>{type}</h3>
+                <ResourceItem>
+                  <div className="resource-info">
+                    <div className="resource-name">
+                      <span className="resource-amount">{Math.floor(data.amount)}</span> units
+                      <span className="resource-rate">(+{data.rate.toFixed(1)}/s)</span>
+                    </div>
+                    <div className="resource-location">
+                      {data.locations.map((loc: ResourceLocation) => `${loc.planet} (${loc.system})`).join(', ')}
+                    </div>
+                  </div>
+                </ResourceItem>
+              </ResourceGroup>
+            ))}
+          </ResourcePanel>
+        </>
       )}
 
       <ViewContainer ref={setContainerRef}>
@@ -244,12 +392,14 @@ export default function App() {
             <>
               <GalaxyView
                 stars={galaxy.stars}
+                starSystems={galaxy.starSystems}
                 hyperspaceLanes={galaxy.hyperspaceLanes}
                 width={dimensions.width}
                 height={dimensions.height}
                 onSelectStar={handleSelectStar}
                 homeSystem={gameStarted ? (homeSystem || galaxy.starSystems[0]) : getPreviewCenter()}
                 factions={factions}
+                playerFaction={playerFaction}
               />
               {!gameStarted && (
                 <PreviewControls>

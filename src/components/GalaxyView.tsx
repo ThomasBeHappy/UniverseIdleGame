@@ -12,6 +12,7 @@ interface GalaxyViewProps {
   homeSystem: StarSystem;
   factions: Faction[];
   starSystems: StarSystem[];
+  playerFaction: Faction | null;
 }
 
 interface Camera {
@@ -194,13 +195,16 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
   onSelectStar,
   homeSystem,
   factions,
-  starSystems
+  starSystems,
+  playerFaction
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const backgroundCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+  const [hasDragged, setHasDragged] = useState(false);
+  const DRAG_THRESHOLD = 5; // pixels of movement before considering it a drag
   const [camera, setCamera] = useState<Camera>({ 
     x: homeSystem.star.position.x, 
     y: homeSystem.star.position.y, 
@@ -256,14 +260,10 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
-    const star = findStarAtPosition(x, y);
-    if (star && onSelectStar) {
-      onSelectStar(star);
-      return;
-    }
-
-    setIsDragging(true);
     setDragStart({ x: e.clientX, y: e.clientY });
+    setLastMousePos({ x: e.clientX, y: e.clientY });
+    setHasDragged(false);
+    setIsDragging(true);
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -274,16 +274,23 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
     const y = e.clientY - rect.top;
 
     if (isDragging) {
-      const dx = (e.clientX - dragStart.x) / camera.zoom;
-      const dy = (e.clientY - dragStart.y) / camera.zoom;
+      const dx = e.clientX - lastMousePos.x;
+      const dy = e.clientY - lastMousePos.y;
+      const dragDistance = Math.sqrt(dx * dx + dy * dy);
 
-      setCamera(prev => ({
-        ...prev,
-        x: prev.x - dx,
-        y: prev.y - dy
-      }));
+      if (dragDistance > DRAG_THRESHOLD) {
+        setHasDragged(true);
+        const worldDx = dx / camera.zoom;
+        const worldDy = dy / camera.zoom;
 
-      setDragStart({ x: e.clientX, y: e.clientY });
+        setCamera(prev => ({
+          ...prev,
+          x: prev.x - worldDx,
+          y: prev.y - worldDy
+        }));
+      }
+
+      setLastMousePos({ x: e.clientX, y: e.clientY });
     } else {
       const star = findStarAtPosition(x, y);
       setHoveredStar(star);
@@ -291,8 +298,22 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
     }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!hasDragged) {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      const star = findStarAtPosition(x, y);
+      if (star && onSelectStar) {
+        onSelectStar(star);
+      }
+    }
+    
     setIsDragging(false);
+    setHasDragged(false);
   };
 
   const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -482,7 +503,10 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
     // Draw stars
     stars.forEach(star => {
       const pos = worldToScreen(star.position.x, star.position.y);
+      
+      // Check if star is owned by player or any faction
       const faction = factions.find(f => f.controlledSystems.has(star.id));
+      const isPlayerOwned = playerFaction?.controlledSystems.has(star.id);
 
       // Draw star glow
       const glowSize = (star.size || 1) * 3 * camera.zoom;
@@ -530,12 +554,14 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
       ctx.fillStyle = star.color;
       ctx.fill();
 
-      // Draw faction indicator
-      if (faction) {
+      // Draw ownership indicator
+      if (isPlayerOwned || faction) {
+        const ownerColor = isPlayerOwned ? playerFaction!.color : faction!.color;
+        
         // Draw outer ring
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
-        ctx.strokeStyle = faction.color;
+        ctx.strokeStyle = ownerColor;
         ctx.lineWidth = 2;
         ctx.stroke();
 
@@ -544,15 +570,25 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
           pos.x, pos.y, 0,
           pos.x, pos.y, 8
         );
-        factionGlow.addColorStop(0, `${faction.color}40`);
+        factionGlow.addColorStop(0, `${ownerColor}40`);
         factionGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
         ctx.fillStyle = factionGlow;
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2);
         ctx.fill();
+
+        // Add pulsing effect for player-owned systems
+        if (isPlayerOwned) {
+          const pulseSize = 6 + Math.sin(Date.now() / 1000) * 2;
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, pulseSize, 0, Math.PI * 2);
+          ctx.strokeStyle = `${ownerColor}40`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
       }
     });
-  }, [stars, factions, worldToScreen, camera]);
+  }, [stars, factions, worldToScreen, camera, playerFaction]);
 
   return (
     <div className="galaxy-view" style={{ width, height }}>
@@ -565,7 +601,9 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
           position: 'absolute',
           top: 0,
           left: 0,
-          zIndex: 0
+          zIndex: 0,
+          height: '100%',
+          width: '100%'
         }}
       />
       <canvas
@@ -577,7 +615,9 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
           position: 'absolute',
           top: 0,
           left: 0,
-          zIndex: 1
+          zIndex: 1,
+          height: '100%',
+          width: '100%'
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
