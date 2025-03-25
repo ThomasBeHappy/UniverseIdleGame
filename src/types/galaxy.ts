@@ -50,6 +50,7 @@ export interface Planet {
   size: number;
   orbitDistance: number;
   orbitSpeed: number;
+  resources: Resource[];
 }
 
 export interface Resource {
@@ -80,10 +81,34 @@ export enum ResourceType {
   IRON = 'IRON',
   COPPER = 'COPPER',
   GOLD = 'GOLD',
+  SILVER = 'SILVER',
   PLATINUM = 'PLATINUM',
   RARE_EARTH = 'RARE_EARTH',
+  TITANIUM = 'TITANIUM',
+  URANIUM = 'URANIUM',
+  PLUTONIUM = 'PLUTONIUM',
+  HELIUM_3 = 'HELIUM_3',
+  DEUTERIUM = 'DEUTERIUM',
+  ANTIMATTER = 'ANTIMATTER',
+  EXOTIC_MATTER = 'EXOTIC_MATTER',
+  DARK_MATTER = 'DARK_MATTER',
+  QUANTUM_PARTICLES = 'QUANTUM_PARTICLES',
+  GRAVITONIUM = 'GRAVITONIUM',
   WATER = 'WATER',
-  FUEL = 'FUEL'
+  ICE = 'ICE',
+  METHANE = 'METHANE',
+  AMMONIA = 'AMMONIA',
+  FOOD = 'FOOD',
+  ORGANICS = 'ORGANICS',
+  FUEL = 'FUEL',
+  PLASMA = 'PLASMA',
+  CRYSTALS = 'CRYSTALS',
+  SILICON = 'SILICON',
+  CARBON = 'CARBON',
+  LITHIUM = 'LITHIUM',
+  COBALT = 'COBALT',
+  IRIDIUM = 'IRIDIUM',
+  HYDROGEN = 'HYDROGEN'
 }
 
 export enum FactionType {

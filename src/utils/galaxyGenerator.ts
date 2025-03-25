@@ -56,6 +56,54 @@ const RESOURCE_TYPES: ResourceTypeInfo[] = [
   { type: ResourceType.FUEL, probability: 0.1 }
 ];
 
+// Add new resource type mappings
+const PLANET_RESOURCES: Record<PlanetType, ResourceTypeInfo[]> = {
+  [PlanetType.ROCKY]: [
+    { type: ResourceType.IRON, probability: 0.4 },
+    { type: ResourceType.COPPER, probability: 0.3 },
+    { type: ResourceType.GOLD, probability: 0.2 },
+    { type: ResourceType.PLATINUM, probability: 0.2 },
+    { type: ResourceType.RARE_EARTH, probability: 0.3 },
+    { type: ResourceType.TITANIUM, probability: 0.2 },
+    { type: ResourceType.URANIUM, probability: 0.1 },
+    { type: ResourceType.WATER, probability: 0.3 },
+    { type: ResourceType.SILICON, probability: 0.4 },
+    { type: ResourceType.CARBON, probability: 0.3 }
+  ],
+  [PlanetType.GAS_GIANT]: [
+    { type: ResourceType.METHANE, probability: 0.8 },
+    { type: ResourceType.AMMONIA, probability: 0.6 },
+    { type: ResourceType.HELIUM_3, probability: 0.4 },
+    { type: ResourceType.DEUTERIUM, probability: 0.5 },
+    { type: ResourceType.FUEL, probability: 0.7 },
+    { type: ResourceType.PLASMA, probability: 0.3 },
+    { type: ResourceType.HYDROGEN, probability: 0.9 }
+  ],
+  [PlanetType.ICE]: [
+    { type: ResourceType.WATER, probability: 0.8 },
+    { type: ResourceType.ICE, probability: 0.9 },
+    { type: ResourceType.METHANE, probability: 0.4 },
+    { type: ResourceType.AMMONIA, probability: 0.3 },
+    { type: ResourceType.DEUTERIUM, probability: 0.2 },
+    { type: ResourceType.HELIUM_3, probability: 0.1 }
+  ],
+  [PlanetType.DESERT]: [
+    { type: ResourceType.IRON, probability: 0.3 },
+    { type: ResourceType.COPPER, probability: 0.2 },
+    { type: ResourceType.GOLD, probability: 0.2 },
+    { type: ResourceType.SILICON, probability: 0.4 },
+    { type: ResourceType.WATER, probability: 0.1 },
+    { type: ResourceType.RARE_EARTH, probability: 0.2 }
+  ],
+  [PlanetType.OCEAN]: [
+    { type: ResourceType.WATER, probability: 0.9 },
+    { type: ResourceType.DEUTERIUM, probability: 0.4 },
+    { type: ResourceType.ORGANICS, probability: 0.6 },
+    { type: ResourceType.FOOD, probability: 0.7 },
+    { type: ResourceType.RARE_EARTH, probability: 0.2 }
+  ]
+};
+
 interface Edge {
   fromStarId: string;
   toStarId: string;
@@ -210,23 +258,11 @@ function generateStar(): Star {
   };
 }
 
-function generatePlanet(starName: string, index: number): Planet {
-  const planetTypeInfo = selectRandomType(PLANET_TYPES);
-  
-  return {
-    id: uuidv4(),
-    name: generatePlanetName(planetTypeInfo.type, starName, index),
-    type: planetTypeInfo.type,
-    size: 0.5 + Math.random() * 1.5,
-    orbitDistance: 20 + Math.random() * 100,
-    orbitSpeed: 0.1 + Math.random() * 0.5
-  };
-}
-
-function generateResources(): Resource[] {
+function generateResources(planetType: PlanetType): Resource[] {
   const resources: Resource[] = [];
-  const numResources = 1 + Math.floor(Math.random() * 3);
-  const availableTypes = [...RESOURCE_TYPES];
+  const possibleResources = PLANET_RESOURCES[planetType];
+  const numResources = 1 + Math.floor(Math.random() * 3); // 1-3 resources per planet
+  const availableTypes = [...possibleResources];
   
   for (let i = 0; i < numResources && availableTypes.length > 0; i++) {
     // Get random index from remaining types
@@ -236,14 +272,67 @@ function generateResources(): Resource[] {
     // Remove the selected type to prevent duplicates
     availableTypes.splice(randomIndex, 1);
     
+    // Generate resource amount based on type
+    let amount: number;
+    let regenerationRate: number;
+    
+    switch (resourceTypeInfo.type) {
+      case ResourceType.WATER:
+        amount = 5000 + Math.random() * 15000;
+        regenerationRate = 10 + Math.random() * 20;
+        break;
+      case ResourceType.FUEL:
+        amount = 2000 + Math.random() * 8000;
+        regenerationRate = 5 + Math.random() * 15;
+        break;
+      case ResourceType.FOOD:
+        amount = 1000 + Math.random() * 4000;
+        regenerationRate = 8 + Math.random() * 16;
+        break;
+      case ResourceType.IRON:
+      case ResourceType.COPPER:
+      case ResourceType.GOLD:
+      case ResourceType.PLATINUM:
+        amount = 500 + Math.random() * 2000;
+        regenerationRate = 1 + Math.random() * 5;
+        break;
+      case ResourceType.RARE_EARTH:
+        amount = 100 + Math.random() * 500;
+        regenerationRate = 0.5 + Math.random() * 2;
+        break;
+      case ResourceType.HELIUM_3:
+      case ResourceType.DEUTERIUM:
+        amount = 50 + Math.random() * 200;
+        regenerationRate = 0.2 + Math.random() * 1;
+        break;
+      default:
+        amount = 1000 + Math.random() * 5000;
+        regenerationRate = 2 + Math.random() * 8;
+    }
+    
     resources.push({
       type: resourceTypeInfo.type,
-      amount: 1000 + Math.random() * 9000,
-      regenerationRate: 1 + Math.random() * 10
+      amount,
+      regenerationRate
     });
   }
   
   return resources;
+}
+
+function generatePlanet(starName: string, index: number): Planet {
+  const planetTypeInfo = selectRandomType(PLANET_TYPES);
+  const planetType = planetTypeInfo.type;
+  
+  return {
+    id: uuidv4(),
+    name: generatePlanetName(planetType, starName, index),
+    type: planetType,
+    size: 0.5 + Math.random() * 1.5,
+    orbitDistance: 20 + Math.random() * 100,
+    orbitSpeed: 0.1 + Math.random() * 0.5,
+    resources: generateResources(planetType)
+  };
 }
 
 function generateStarSystem(star: Star): StarSystem {
@@ -258,7 +347,7 @@ function generateStarSystem(star: Star): StarSystem {
     id: uuidv4(),
     star,
     planets,
-    resources: generateResources()
+    resources: generateResources(planets[0].type)
   };
 }
 

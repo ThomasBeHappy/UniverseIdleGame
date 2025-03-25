@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styled from '@emotion/styled';
 import { StarSystem, Planet } from '../types/galaxy';
+import { PlanetView } from './PlanetView';
 
 interface StarSystemViewProps {
   system: StarSystem;
@@ -41,6 +42,16 @@ const SystemInfo = styled.div`
   padding: 16px;
   color: white;
   max-width: 300px;
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  li {
+    margin-bottom: 4px;
+  }
 `;
 
 class SystemRenderer {
@@ -51,8 +62,9 @@ class SystemRenderer {
   private height: number;
   private startTime: number;
   private animationFrame: number | null;
+  private onPlanetClick: (planet: Planet) => void;
 
-  constructor(canvas: HTMLCanvasElement, system: StarSystem, width: number, height: number) {
+  constructor(canvas: HTMLCanvasElement, system: StarSystem, width: number, height: number, onPlanetClick: (planet: Planet) => void) {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Could not get canvas context');
@@ -62,6 +74,10 @@ class SystemRenderer {
     this.height = height;
     this.startTime = Date.now();
     this.animationFrame = null;
+    this.onPlanetClick = onPlanetClick;
+
+    // Add click handler
+    this.canvas.addEventListener('click', this.handleClick);
   }
 
   start() {
@@ -74,6 +90,7 @@ class SystemRenderer {
       cancelAnimationFrame(this.animationFrame);
       this.animationFrame = null;
     }
+    this.canvas.removeEventListener('click', this.handleClick);
   }
 
   private animate = () => {
@@ -128,18 +145,47 @@ class SystemRenderer {
       this.ctx.fill();
     });
   }
+
+  private handleClick = (e: MouseEvent) => {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const centerX = this.width / 2;
+    const centerY = this.height / 2;
+    const starSize = this.system.star.size * 20;
+
+    // Check if click is on any planet
+    this.system.planets.forEach((planet, index) => {
+      const orbitRadius = (index + 1) * 60 + starSize;
+      const angle = (Date.now() - this.startTime) * planet.orbitSpeed * 0.001 % (Math.PI * 2);
+      const planetX = centerX + Math.cos(angle) * orbitRadius;
+      const planetY = centerY + Math.sin(angle) * orbitRadius;
+
+      // Calculate distance from click to planet center
+      const dx = x - planetX;
+      const dy = y - planetY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      // If click is within planet radius, trigger callback
+      if (distance < planet.size * 10) {
+        this.onPlanetClick(planet);
+      }
+    });
+  };
 }
 
 export function StarSystemView({ system, width, height, onBack }: StarSystemViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<SystemRenderer | null>(null);
+  const [selectedPlanet, setSelectedPlanet] = useState<Planet | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Create and start renderer
-    rendererRef.current = new SystemRenderer(canvas, system, width, height);
+    // Create and start renderer with click handler
+    rendererRef.current = new SystemRenderer(canvas, system, width, height, setSelectedPlanet);
     rendererRef.current.start();
 
     // Cleanup
@@ -148,6 +194,17 @@ export function StarSystemView({ system, width, height, onBack }: StarSystemView
       rendererRef.current = null;
     };
   }, [system, width, height]);
+
+  if (selectedPlanet) {
+    return (
+      <PlanetView
+        planet={selectedPlanet}
+        width={width}
+        height={height}
+        onBack={() => setSelectedPlanet(null)}
+      />
+    );
+  }
 
   return (
     <>
@@ -165,18 +222,33 @@ export function StarSystemView({ system, width, height, onBack }: StarSystemView
         <h3>Planets: {system.planets.length}</h3>
         <ul>
           {system.planets.map(planet => (
-            <li key={planet.id}>
+            <li 
+              key={planet.id}
+              onClick={() => setSelectedPlanet(planet)}
+              style={{ 
+                cursor: 'pointer',
+                padding: '8px',
+                marginBottom: '4px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '4px',
+                transition: 'background 0.2s ease'
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+            >
               {planet.name} ({planet.type})
             </li>
           ))}
         </ul>
         <h3>Resources:</h3>
         <ul>
-          {system.resources.map(resource => (
-            <li key={resource.type}>
-              {resource.type}: {Math.floor(resource.amount)} (+{resource.regenerationRate.toFixed(1)}/s)
-            </li>
-          ))}
+          {system.planets.flatMap(planet => 
+            planet.resources.map(resource => (
+              <li key={`${planet.id}-${resource.type}`}>
+                {planet.name} - {resource.type}: {Math.floor(resource.amount)} (+{resource.regenerationRate.toFixed(1)}/s)
+              </li>
+            ))
+          )}
         </ul>
       </SystemInfo>
     </>

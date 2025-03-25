@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import styled from '@emotion/styled';
-import { Star, HyperspaceLane, Vector2D, StarSystem, Faction, StarType } from '../types/galaxy';
+import { Star, HyperspaceLane, Vector2D, StarSystem, Faction, StarType, Resource } from '../types/galaxy';
 import { calculateDistance } from '../utils/galaxyGenerator';
 
 interface GalaxyViewProps {
@@ -11,6 +11,7 @@ interface GalaxyViewProps {
   onSelectStar?: (star: Star) => void;
   homeSystem: StarSystem;
   factions: Faction[];
+  starSystems: StarSystem[];
 }
 
 interface Camera {
@@ -192,13 +193,19 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
   height, 
   onSelectStar,
   homeSystem,
-  factions
+  factions,
+  starSystems
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const backgroundCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [camera, setCamera] = useState<Camera>({ x: homeSystem.star.position.x, y: homeSystem.star.position.y, zoom: 2 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+  const [camera, setCamera] = useState<Camera>({ 
+    x: homeSystem.star.position.x, 
+    y: homeSystem.star.position.y, 
+    zoom: 2 
+  });
   const [hoveredStar, setHoveredStar] = useState<Star | null>(null);
   const [focusedStar, setFocusedStar] = useState<Star | null>(null);
   
@@ -422,94 +429,55 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
       const start = worldToScreen(startStar.position.x, startStar.position.y);
       const end = worldToScreen(endStar.position.x, endStar.position.y);
 
+      // Check if both stars are owned by the same faction
+      const startFaction = factions.find(f => f.controlledSystems.has(startStar.id));
+      const endFaction = factions.find(f => f.controlledSystems.has(endStar.id));
+      const isControlledLane = startFaction && startFaction === endFaction;
+
       // Draw lane glow
       ctx.beginPath();
       ctx.moveTo(start.x, start.y);
       ctx.lineTo(end.x, end.y);
-      ctx.strokeStyle = 'rgba(0, 100, 255, 0.1)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = isControlledLane 
+        ? `${startFaction.color}20` 
+        : 'rgba(0, 100, 255, 0.1)';
+      ctx.lineWidth = 20;
       ctx.stroke();
 
       // Draw lane
       ctx.beginPath();
       ctx.moveTo(start.x, start.y);
       ctx.lineTo(end.x, end.y);
-      ctx.strokeStyle = 'rgba(0, 150, 255, 0.3)';
+      ctx.strokeStyle = isControlledLane 
+        ? `${startFaction.color}40` 
+        : 'rgba(0, 150, 255, 0.3)';
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Draw particles
-      const particleCount = 2;
-      for (let i = 0; i < particleCount; i++) {
-        const progress = (Date.now() / 2000 + i / particleCount) % 1;
-        const x = start.x + (end.x - start.x) * progress;
-        const y = start.y + (end.y - start.y) * progress;
+      // Draw particles only for controlled lanes
+      if (isControlledLane) {
+        const particleCount = 5;
+        for (let i = 0; i < particleCount; i++) {
+          const progress = (Date.now() / 2000 + i / particleCount) % 1;
+          const x = start.x + (end.x - start.x) * progress;
+          const y = start.y + (end.y - start.y) * progress;
 
-        ctx.beginPath();
-        ctx.arc(x, y, 1, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.fill();
+          ctx.beginPath();
+          ctx.arc(x, y, 1, 0, Math.PI * 2);
+          ctx.fillStyle = `${startFaction.color}80`;
+          ctx.fill();
+        }
       }
     });
-  }, [stars, hyperspaceLanes, worldToScreen]);
+  }, [stars, hyperspaceLanes, worldToScreen, factions]);
 
-  // Draw stars and territories
+  // Draw stars and territory indicators
   useEffect(() => {
     const ctx = canvasRef.current?.getContext('2d');
     if (!ctx) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
-
-    const width = canvas.width;
-    const height = canvas.height;
-
-    // Draw faction territories
-    factions.forEach(faction => {
-      const ownedStars = stars.filter(star => 
-        faction.controlledSystems.has(star.id)
-      );
-
-      if (ownedStars.length > 0) {
-        const borderPoints = calculateBorderPoints(ownedStars, stars);
-        if (borderPoints.length > 0) {
-          // Transform border points to screen coordinates
-          const screenPoints = borderPoints.map(point => worldToScreen(point.x, point.y));
-
-          // Draw outer glow
-          ctx.beginPath();
-          ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
-          for (let i = 1; i < screenPoints.length; i++) {
-            ctx.lineTo(screenPoints[i].x, screenPoints[i].y);
-          }
-          ctx.closePath();
-          ctx.strokeStyle = `${faction.color}40`;
-          ctx.lineWidth = 4;
-          ctx.stroke();
-
-          // Draw border
-          ctx.beginPath();
-          ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
-          for (let i = 1; i < screenPoints.length; i++) {
-            ctx.lineTo(screenPoints[i].x, screenPoints[i].y);
-          }
-          ctx.closePath();
-          ctx.strokeStyle = `${faction.color}80`;
-          ctx.lineWidth = 2;
-          ctx.stroke();
-
-          // Fill with gradient
-          const gradient = ctx.createRadialGradient(
-            width / 2, height / 2, 0,
-            width / 2, height / 2, width / 2
-          );
-          gradient.addColorStop(0, `${faction.color}20`);
-          gradient.addColorStop(1, `${faction.color}05`);
-          ctx.fillStyle = gradient;
-          ctx.fill();
-        }
-      }
-    });
 
     // Draw stars
     stars.forEach(star => {
@@ -564,11 +532,24 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
 
       // Draw faction indicator
       if (faction) {
+        // Draw outer ring
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
+        ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
         ctx.strokeStyle = faction.color;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 2;
         ctx.stroke();
+
+        // Draw inner glow
+        const factionGlow = ctx.createRadialGradient(
+          pos.x, pos.y, 0,
+          pos.x, pos.y, 8
+        );
+        factionGlow.addColorStop(0, `${faction.color}40`);
+        factionGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = factionGlow;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2);
+        ctx.fill();
       }
     });
   }, [stars, factions, worldToScreen, camera]);
@@ -584,9 +565,7 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
           position: 'absolute',
           top: 0,
           left: 0,
-          zIndex: 0,
-          height: '100%',
-          width: '100%'
+          zIndex: 0
         }}
       />
       <canvas
@@ -598,9 +577,7 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
           position: 'absolute',
           top: 0,
           left: 0,
-          zIndex: 1,
-          height: '100%',
-          width: '100%'
+          zIndex: 1
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -627,7 +604,10 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
           background: 'rgba(0, 0, 0, 0.8)',
           padding: '10px',
           borderRadius: '4px',
-          border: '1px solid rgba(255, 255, 255, 0.2)'
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          maxWidth: '300px',
+          maxHeight: '80vh',
+          overflowY: 'auto'
         }}>
           <h3 style={{ margin: '0 0 5px 0' }}>{focusedStar.name}</h3>
           <p style={{ margin: '0', fontSize: '14px' }}>Type: {focusedStar.type}</p>
@@ -637,6 +617,40 @@ export const GalaxyView: React.FC<GalaxyViewProps> = ({
           {connectedStarIds.has(focusedStar.id) && (
             <p style={{ margin: '5px 0 0 0', fontSize: '14px', color: '#4dabf7' }}>Connected System</p>
           )}
+          
+          <div style={{ marginTop: '10px' }}>
+            <h4 style={{ margin: '0 0 5px 0', fontSize: '14px' }}>Planets:</h4>
+            {starSystems.find(s => s.star.id === focusedStar.id)?.planets.map((planet, index) => (
+              <div key={planet.id} style={{ 
+                marginBottom: '10px',
+                padding: '8px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '4px'
+              }}>
+                <p style={{ margin: '0 0 5px 0', fontSize: '14px' }}>
+                  {planet.name} ({planet.type})
+                </p>
+                {planet.resources.length > 0 && (
+                  <div style={{ fontSize: '12px' }}>
+                    <p style={{ margin: '0 0 3px 0', color: '#aaa' }}>Resources:</p>
+                    {planet.resources.map((resource: Resource, rIndex: number) => (
+                      <div key={rIndex} style={{ 
+                        marginLeft: '10px',
+                        marginBottom: '2px',
+                        display: 'flex',
+                        justifyContent: 'space-between'
+                      }}>
+                        <span>{resource.type}</span>
+                        <span style={{ color: '#888' }}>
+                          {Math.round(resource.amount)} (+{resource.regenerationRate.toFixed(1)}/s)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
