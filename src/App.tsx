@@ -5,7 +5,8 @@ import { StarSystemView } from './components/StarSystemView';
 import { TopBar } from './components/TopBar';
 import { generateGalaxy } from './utils/galaxyGenerator';
 import { generateInitialFactions } from './utils/factionGenerator';
-import { Star, StarSystem, StarType, Faction, FactionType, Resource, Building } from './types/galaxy';
+import { StarSystem, Star, Planet, Resource, ResourceType, Faction, FactionType, StarType } from './types/galaxy';
+import { Building } from './types/buildings';
 import { selectStartingSystem } from './utils/startingSystem';
 
 const AppContainer = styled.div`
@@ -170,271 +171,314 @@ const PreviewControls = styled.div`
 `;
 
 interface ResourceLocation {
-  system: string;
-  planet: string;
+    system: string;
+    planet: string;
 }
 
 interface ResourceTotal {
-  amount: number;
-  rate: number;
-  locations: ResourceLocation[];
+    amount: number;
+    rate: number;
+    locations: ResourceLocation[];
 }
 
 export default function App() {
-  const [galaxy, setGalaxy] = useState<ReturnType<typeof generateGalaxy> | null>(null);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const [containerRef, setContainerRef] = useState<HTMLDivElement | null>(null);
-  const [selectedSystem, setSelectedSystem] = useState<StarSystem | null>(null);
-  const [homeSystem, setHomeSystem] = useState<StarSystem | null>(null);
-  const [factions, setFactions] = useState<Faction[]>([]);
-  const [playerFaction, setPlayerFaction] = useState<Faction | null>(null);
-  const [gameStarted, setGameStarted] = useState(false);
-  const [isGalaxyView, setIsGalaxyView] = useState(true);
-  const [currentDate, setCurrentDate] = useState(2500); // Start in year 2500
-  const [showResources, setShowResources] = useState(false);
+    const [galaxy, setGalaxy] = useState<ReturnType<typeof generateGalaxy> | null>(null);
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+    const [containerRef, setContainerRef] = useState<HTMLDivElement | null>(null);
+    const [selectedSystem, setSelectedSystem] = useState<StarSystem | null>(null);
+    const [homeSystem, setHomeSystem] = useState<StarSystem | null>(null);
+    const [factions, setFactions] = useState<Faction[]>([]);
+    const [playerFaction, setPlayerFaction] = useState<Faction | null>(null);
+    const [gameStarted, setGameStarted] = useState(false);
+    const [isGalaxyView, setIsGalaxyView] = useState(true);
+    const [currentDate, setCurrentDate] = useState(2500);
+    const [showResources, setShowResources] = useState(false);
+    const [playerResources, setPlayerResources] = useState<Map<ResourceType, { amount: number; rate: number }>>(new Map());
 
-  useEffect(() => {
-    generateNewGalaxy();
-  }, []);
+    useEffect(() => {
+        generateNewGalaxy();
+    }, []);
 
-  // Update dimensions when container size changes
-  useEffect(() => {
-    if (!containerRef) return;
+    // Update dimensions when container size changes
+    useEffect(() => {
+        if (!containerRef) return;
 
-    const observer = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        setDimensions({
-          width: entry.contentRect.width,
-          height: entry.contentRect.height
-        });
-      }
-    });
-
-    observer.observe(containerRef);
-    return () => observer.disconnect();
-  }, [containerRef]);
-
-  const generateNewGalaxy = () => {
-    const newGalaxy = generateGalaxy();
-    setGalaxy(newGalaxy);
-    setHomeSystem(null);
-    setFactions([]);
-    setPlayerFaction(null);
-    setGameStarted(false);
-    setIsGalaxyView(true);
-    setSelectedSystem(null);
-    setCurrentDate(2500);
-  };
-
-  const handleBuildingCreated = (building: Building) => {
-    // find the planet in the galaxy and update the buildings array using planet id
-    console.log(building);
-    const planet = galaxy?.starSystems.find(s => s.star.id === building.starId)?.planets.find(p => p.id === building.planetId);
-    console.log(planet);
-    if (planet) {
-      planet.buildings.push(building);
-      console.log(planet.buildings);
-    }
-  };
-
-  const startGame = () => {
-    if (!galaxy) return;
-
-    // Generate factions first
-    const generatedFactions = generateInitialFactions(galaxy.stars);
-    
-    // Then select starting system, ensuring it's away from factions
-    const startingSystem = selectStartingSystem(galaxy.starSystems, generatedFactions);
-    
-    // Create player faction
-    const player: Faction = {
-      id: 'player',
-      name: 'Terran Alliance', // TODO: Let player choose name
-      type: FactionType.PEACEFUL,
-      color: '#4dabf7',
-      homeSystemId: startingSystem.star.id,
-      controlledSystems: new Set([startingSystem.star.id]),
-      relations: new Map(),
-      traits: {
-        expansionist: 0.5,
-        diplomatic: 0.7,
-        aggressive: 0.3,
-        technological: 0.6,
-        economic: 0.5
-      }
-    };
-
-    setHomeSystem(startingSystem);
-    setSelectedSystem(startingSystem);
-    setFactions(generatedFactions);
-    setPlayerFaction(player);
-    setGameStarted(true);
-  };
-
-  const handleSelectStar = (star: Star) => {
-    if (!galaxy || !gameStarted) return;
-    const system = galaxy.starSystems.find(s => s.star.id === star.id);
-    if (system) {
-      setSelectedSystem(system);
-      setIsGalaxyView(false);
-    }
-  };
-
-  const handleBackToGalaxy = () => {
-    setIsGalaxyView(true);
-  };
-
-  // Calculate galaxy center for preview phase
-  const getPreviewCenter = (): StarSystem => {
-    if (!galaxy) {
-      // Provide a default center if galaxy doesn't exist yet
-      return {
-        id: 'preview-system',
-        star: {
-          id: 'preview-center',
-          position: { x: 0, y: 0 },
-          type: StarType.BLACK_HOLE,
-          name: 'Galaxy Center',
-          size: 1,
-          color: '#000000'
-        },
-        planets: [],
-        resources: []
-      };
-    }
-    
-    // Calculate average position of all stars
-    const center = galaxy.stars.reduce((acc, star) => ({
-      x: acc.x + star.position.x,
-      y: acc.y + star.position.y
-    }), { x: 0, y: 0 });
-
-    // Create a dummy system at the center for camera positioning
-    return {
-      id: 'preview-system',
-      star: {
-        id: 'preview-center',
-        position: {
-          x: center.x / galaxy.stars.length,
-          y: center.y / galaxy.stars.length
-        },
-        type: StarType.BLACK_HOLE,
-        name: 'Galaxy Center',
-        size: 1,
-        color: '#000000'
-      },
-      planets: [],
-      resources: []
-    };
-  };
-
-  // Calculate total resources across all controlled systems
-  const calculateTotalResources = () => {
-    if (!galaxy || !playerFaction) return new Map<string, ResourceTotal>();
-
-    const totals = new Map<string, ResourceTotal>();
-    galaxy.starSystems
-      .filter(system => playerFaction.controlledSystems.has(system.star.id))
-      .forEach(system => {
-        system.planets.forEach(planet => {
-          planet.resources.forEach(resource => {
-            const existing = totals.get(resource.type) || {
-              amount: 0,
-              rate: 0,
-              locations: []
-            };
-            existing.amount += resource.amount;
-            existing.rate += resource.regenerationRate;
-            existing.locations.push({
-              system: system.star.name,
-              planet: planet.name
-            });
-            totals.set(resource.type, existing);
-          });
-        });
-      });
-    return totals;
-  };
-
-  if (!galaxy) {
-    return <div>Loading galaxy...</div>;
-  }
-
-  return (
-    <Container>
-      {gameStarted && playerFaction && (
-        <>
-          <TopBar
-            currentDate={currentDate}
-            playerFaction={playerFaction}
-            ownedSystemCount={playerFaction.controlledSystems.size}
-            extraContent={
-              <ToggleResourcesButton onClick={() => setShowResources(!showResources)}>
-                {showResources ? '← Hide' : 'Resources →'}
-              </ToggleResourcesButton>
+        const observer = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                setDimensions({
+                    width: entry.contentRect.width,
+                    height: entry.contentRect.height
+                });
             }
-          />
+        });
 
-          <ResourcePanel isVisible={showResources}>
-            <h2>Empire Resources</h2>
-            {Array.from(calculateTotalResources()).map(([type, data]) => (
-              <ResourceGroup key={type}>
-                <h3>{type}</h3>
-                <ResourceItem>
-                  <div className="resource-info">
-                    <div className="resource-name">
-                      <span className="resource-amount">{Math.floor(data.amount)}</span> units
-                      <span className="resource-rate">(+{data.rate.toFixed(1)}/s)</span>
-                    </div>
-                    <div className="resource-location">
-                      {data.locations.map((loc: ResourceLocation) => `${loc.planet} (${loc.system})`).join(', ')}
-                    </div>
-                  </div>
-                </ResourceItem>
-              </ResourceGroup>
-            ))}
-          </ResourcePanel>
-        </>
-      )}
+        observer.observe(containerRef);
+        return () => observer.disconnect();
+    }, [containerRef]);
 
-      <ViewContainer ref={setContainerRef}>
-        {dimensions.width > 0 && dimensions.height > 0 && (
-          isGalaxyView ? (
-            <>
-              <GalaxyView
-                stars={galaxy.stars}
-                starSystems={galaxy.starSystems}
-                hyperspaceLanes={galaxy.hyperspaceLanes}
-                width={dimensions.width}
-                height={dimensions.height}
-                onSelectStar={handleSelectStar}
-                homeSystem={gameStarted ? (homeSystem || galaxy.starSystems[0]) : getPreviewCenter()}
-                factions={factions}
-                playerFaction={playerFaction}
-              />
-              {!gameStarted && (
-                <PreviewControls>
-                  <Title>Welcome to Galactic Conquest</Title>
-                  <Button className="primary" onClick={startGame}>
-                    Start Game
-                  </Button>
-                  <Button onClick={generateNewGalaxy}>
-                    Generate New Galaxy
-                  </Button>
-                </PreviewControls>
-              )}
-            </>
-          ) : (
-            <StarSystemView
-              system={selectedSystem!}
-              onBack={handleBackToGalaxy}
-              width={dimensions.width}
-              height={dimensions.height}
-              onBuildingCreated={handleBuildingCreated}
-            />
-          )
-        )}
-      </ViewContainer>
-    </Container>
-  );
+    // Initialize player resources with all resource types at 0
+    useEffect(() => {
+        if (gameStarted) {
+            const initialResources = new Map<ResourceType, { amount: number; rate: number }>();
+            Object.values(ResourceType).forEach(type => {
+                initialResources.set(type, { amount: 0, rate: 0 });
+            });
+            setPlayerResources(initialResources);
+        }
+    }, [gameStarted]);
+
+    // Add resource update interval
+    useEffect(() => {
+        if (!gameStarted || !galaxy || !playerFaction) return;
+
+        const updateInterval = setInterval(() => {
+            setPlayerResources(prevResources => {
+                const newResources = new Map(prevResources);
+
+                // set rates to 0
+                newResources.forEach((value, key) => {
+                    value.rate = 0;
+                });
+
+                // Update resources based on buildings and resource patches
+                galaxy.starSystems
+                    .filter(system => playerFaction.controlledSystems.has(system.star.id))
+                    .forEach(system => {
+                        system.planets.forEach(planet => {
+                            // Update from buildings (if we have any building types that produce resources)
+                            planet.buildings.forEach(building => {
+                                if (building.type === 'RESOURCE_EXTRACTOR') {
+                                    const resourceType = building.resourceType as ResourceType;
+                                    const current = newResources.get(resourceType) || { amount: 0, rate: 0 };
+                                    current.amount += 0.1; // 0.1 units per second
+                                    current.rate += 1; // 1 unit per second
+                                    newResources.set(resourceType, current);
+                                }
+                            });
+                        });
+                    });
+
+                return newResources;
+            });
+        }, 100); // Update every 100ms
+
+        return () => clearInterval(updateInterval);
+    }, [gameStarted, galaxy, playerFaction]);
+
+    const generateNewGalaxy = () => {
+        const newGalaxy = generateGalaxy();
+        setGalaxy(newGalaxy);
+        setHomeSystem(null);
+        setFactions([]);
+        setPlayerFaction(null);
+        setGameStarted(false);
+        setIsGalaxyView(true);
+        setSelectedSystem(null);
+        setCurrentDate(2500);
+    };
+
+    const handleBuildingCreated = (building: Building) => {
+        // find the planet in the galaxy and update the buildings array using planet id
+        console.log(building);
+        const planet = galaxy?.starSystems.find(s => s.star.id === building.starId)?.planets.find(p => p.id === building.planetId);
+        console.log(planet);
+        if (planet) {
+            planet.buildings.push(building);
+            console.log(planet.buildings);
+        }
+    };
+
+    const handleBuyBuilding = (cost: Map<ResourceType, number>) => {
+        // update player resources
+        cost.forEach((amount, type) => {
+            const current = playerResources.get(type) || { amount: 0, rate: 0 };
+            current.amount -= amount;
+            playerResources.set(type, current);
+        });
+    };
+
+    const handleCanBuyBuilding = (cost: Map<ResourceType, number>) => {
+        // check if player has enough resources
+        return Array.from(cost.entries()).every(([type, amount]) => {
+            const current = playerResources.get(type) || { amount: 0, rate: 0 };
+            return current.amount >= amount;
+        });
+    };
+
+    const startGame = () => {
+        if (!galaxy) return;
+
+        // Generate factions first
+        const generatedFactions = generateInitialFactions(galaxy.stars);
+
+        // Then select starting system, ensuring it's away from factions
+        const startingSystem = selectStartingSystem(galaxy.starSystems, generatedFactions);
+
+        // Create player faction
+        const player: Faction = {
+            id: 'player',
+            name: 'Terran Alliance', // TODO: Let player choose name
+            type: FactionType.PEACEFUL,
+            color: '#4dabf7',
+            homeSystemId: startingSystem.star.id,
+            controlledSystems: new Set([startingSystem.star.id]),
+            relations: new Map(),
+            traits: {
+                expansionist: 0.5,
+                diplomatic: 0.7,
+                aggressive: 0.3,
+                technological: 0.6,
+                economic: 0.5
+            }
+        };
+
+        setHomeSystem(startingSystem);
+        setSelectedSystem(startingSystem);
+        setFactions(generatedFactions);
+        setPlayerFaction(player);
+        setGameStarted(true);
+    };
+
+    const handleSelectStar = (star: Star) => {
+        if (!galaxy || !gameStarted) return;
+        const system = galaxy.starSystems.find(s => s.star.id === star.id);
+        if (system) {
+            setSelectedSystem(system);
+            setIsGalaxyView(false);
+        }
+    };
+
+    const handleBackToGalaxy = () => {
+        setIsGalaxyView(true);
+    };
+
+    // Calculate galaxy center for preview phase
+    const getPreviewCenter = (): StarSystem => {
+        if (!galaxy) {
+            // Provide a default center if galaxy doesn't exist yet
+            return {
+                id: 'preview-system',
+                star: {
+                    id: 'preview-center',
+                    position: { x: 0, y: 0 },
+                    type: StarType.BLACK_HOLE,
+                    name: 'Galaxy Center',
+                    size: 1,
+                    color: '#000000'
+                },
+                planets: [],
+                resources: []
+            };
+        }
+
+        // Calculate average position of all stars
+        const center = galaxy.stars.reduce((acc, star) => ({
+            x: acc.x + star.position.x,
+            y: acc.y + star.position.y
+        }), { x: 0, y: 0 });
+
+        // Create a dummy system at the center for camera positioning
+        return {
+            id: 'preview-system',
+            star: {
+                id: 'preview-center',
+                position: {
+                    x: center.x / galaxy.stars.length,
+                    y: center.y / galaxy.stars.length
+                },
+                type: StarType.BLACK_HOLE,
+                name: 'Galaxy Center',
+                size: 1,
+                color: '#000000'
+            },
+            planets: [],
+            resources: []
+        };
+    };
+
+    // Replace calculateTotalResources with getPlayerResources
+    const getPlayerResources = () => {
+        return playerResources;
+    };
+
+    if (!galaxy) {
+        return <div>Loading galaxy...</div>;
+    }
+
+    return (
+        <Container>
+            {gameStarted && playerFaction && (
+                <>
+                    <TopBar
+                        currentDate={currentDate}
+                        playerFaction={playerFaction}
+                        ownedSystemCount={playerFaction.controlledSystems.size}
+                        extraContent={
+                            <ToggleResourcesButton onClick={() => setShowResources(!showResources)}>
+                                {showResources ? '← Hide' : 'Resources →'}
+                            </ToggleResourcesButton>
+                        }
+                    />
+
+                    <ResourcePanel isVisible={showResources}>
+                        <h2>Player Resources</h2>
+                        {Array.from(getPlayerResources()).map(([type, data]) => (
+                            <ResourceGroup key={type}>
+                                <h3>{type}</h3>
+                                <ResourceItem>
+                                    <div className="resource-info">
+                                        <div className="resource-name">
+                                            <span className="resource-amount">{Math.floor(data.amount)}</span> units
+                                            <span className="resource-rate">(+{data.rate.toFixed(1)}/s)</span>
+                                        </div>
+                                    </div>
+                                </ResourceItem>
+                            </ResourceGroup>
+                        ))}
+                    </ResourcePanel>
+                </>
+            )}
+
+            <ViewContainer ref={setContainerRef}>
+                {dimensions.width > 0 && dimensions.height > 0 && (
+                    isGalaxyView ? (
+                        <>
+                            <GalaxyView
+                                stars={galaxy.stars}
+                                starSystems={galaxy.starSystems}
+                                hyperspaceLanes={galaxy.hyperspaceLanes}
+                                width={dimensions.width}
+                                height={dimensions.height}
+                                onSelectStar={handleSelectStar}
+                                homeSystem={gameStarted ? (homeSystem || galaxy.starSystems[0]) : getPreviewCenter()}
+                                factions={factions}
+                                playerFaction={playerFaction}
+                            />
+                            {!gameStarted && (
+                                <PreviewControls>
+                                    <Title>Welcome to Galactic Conquest</Title>
+                                    <Button className="primary" onClick={startGame}>
+                                        Start Game
+                                    </Button>
+                                    <Button onClick={generateNewGalaxy}>
+                                        Generate New Galaxy
+                                    </Button>
+                                </PreviewControls>
+                            )}
+                        </>
+                    ) : (
+                        <StarSystemView
+                            system={selectedSystem!}
+                            onBack={handleBackToGalaxy}
+                            width={dimensions.width}
+                            height={dimensions.height}
+                            onBuildingCreated={handleBuildingCreated}
+                            onBuyBuilding={handleBuyBuilding}
+                            onCanBuyBuilding={handleCanBuyBuilding}
+                        />
+                    )
+                )}
+            </ViewContainer>
+        </Container>
+    );
 }

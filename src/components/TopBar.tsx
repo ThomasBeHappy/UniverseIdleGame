@@ -3,10 +3,10 @@ import styled from '@emotion/styled';
 import { Faction } from '../types/galaxy';
 
 export interface TopBarProps {
-  currentDate: number;
-  playerFaction: Faction;
-  ownedSystemCount: number;
-  extraContent?: ReactNode;
+    currentDate: number;
+    playerFaction: Faction;
+    ownedSystemCount: number;
+    extraContent?: ReactNode;
 }
 
 const TopBarContainer = styled.div`
@@ -48,18 +48,18 @@ const Date = styled.div`
 `;
 
 export function TopBar({ currentDate, playerFaction, ownedSystemCount, extraContent }: TopBarProps) {
-  return (
-    <TopBarContainer>
-      <FactionInfo>
-        <FactionName color={playerFaction.color}>
-          {playerFaction.name}
-        </FactionName>
-        <SystemCount>
-          {ownedSystemCount} system{ownedSystemCount !== 1 ? 's' : ''} controlled
-        </SystemCount>
-      </FactionInfo>
-      {extraContent}
-      <Date>Year {currentDate}</Date>
-    </TopBarContainer>
-  );
+    return (
+        <TopBarContainer>
+            <FactionInfo>
+                <FactionName color={playerFaction.color}>
+                    {playerFaction.name}
+                </FactionName>
+                <SystemCount>
+                    {ownedSystemCount} system{ownedSystemCount !== 1 ? 's' : ''} controlled
+                </SystemCount>
+            </FactionInfo>
+            {extraContent}
+            <Date>Year {currentDate}</Date>
+        </TopBarContainer>
+    );
 } 
