@@ -4,6 +4,12 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Planet, Resource, ResourceType } from '../types/galaxy';
 import { Building, BuildingType, buildingDefinitions, PlaceableOn } from '../types/buildings';
+import waterTexture from '../assets/water.png';
+import sandTexture from '../assets/sand.png';
+import rockTexture from '../assets/rock.png';
+import iceTexture from '../assets/ice.png';
+import gasTexture from '../assets/gas.png';
+import resourcePatchTexture from '../assets/ore.png';
 
 interface PlanetViewProps {
     planet: Planet;
@@ -49,6 +55,7 @@ const BackButton = styled.button`
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s ease;
+  z-index: 1000;
 
   &:hover {
     background: rgba(255, 255, 255, 0.2);
@@ -138,7 +145,7 @@ const Tooltip = styled.div`
 
 const BuildingPanel = styled.div`
   position: absolute;
-  top: 20px;
+  top: 70px;
   left: 20px;
   padding: 20px;
   background: rgba(0, 0, 0, 0.8);
@@ -198,6 +205,7 @@ class PlanetRenderer {
     private mouse: THREE.Vector2;
     private width: number;
     private height: number;
+    private textureLoader: THREE.TextureLoader;
     private onResourcePatchClick: (resource: Resource) => void;
     private onBuildingCreated: (building: Building) => void;
     private onBuyBuilding: (cost: Map<ResourceType, number>) => void;
@@ -225,6 +233,7 @@ class PlanetRenderer {
         this.onCanBuyBuilding = onCanBuyBuilding;
         this.isBuildMode = false;
         this.buildings = [];
+        this.textureLoader = new THREE.TextureLoader();
 
         // Setup scene
         this.scene = new THREE.Scene();
@@ -295,33 +304,114 @@ class PlanetRenderer {
         document.body.appendChild(this.tooltip);
     }
 
+    private loadTexture(path: string, isPatch: boolean = false): THREE.Texture {
+        // Create a default texture in case loading fails
+        const defaultTexture = new THREE.Texture();
+        defaultTexture.needsUpdate = true;
+
+        try {
+            const texture = this.textureLoader.load(
+                path,
+                // Success callback
+                (loadedTexture) => {
+                    if (!isPatch) {
+                        loadedTexture.wrapS = THREE.RepeatWrapping;
+                        loadedTexture.wrapT = THREE.RepeatWrapping;
+                        loadedTexture.repeat.set(4, 2);
+                    }
+                    else {
+                        loadedTexture.wrapS = THREE.ClampToEdgeWrapping;
+                        loadedTexture.wrapT = THREE.ClampToEdgeWrapping;
+                        loadedTexture.repeat.set(1, 1);
+                    }
+                    // Force material update when texture loads
+                    if (this.planetMesh) {
+                        (this.planetMesh.material as THREE.MeshPhongMaterial).needsUpdate = true;
+                    }
+                },
+                // Progress callback
+                undefined,
+                // Error callback
+                (error) => {
+                    console.error(`Failed to load texture ${path}:`, error);
+                }
+            );
+            return texture;
+        } catch (error) {
+            console.error(`Error setting up texture ${path}:`, error);
+            return defaultTexture;
+        }
+    }
+
+    private getPlanetTexture(): THREE.Texture {
+        switch (this.planet.type) {
+            case 'OCEAN':
+                return this.loadTexture(waterTexture);
+            case 'DESERT':
+                return this.loadTexture(sandTexture);
+            case 'ROCKY':
+                return this.loadTexture(rockTexture);
+            case 'ICE':
+                return this.loadTexture(iceTexture);
+            case 'GAS_GIANT':
+                // For gas giants, use a procedural texture or fallback to rock
+                const texture = this.loadTexture(gasTexture);
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.RepeatWrapping;
+                texture.repeat.set(2, 1); // Less tiling for gas giants
+                return texture;
+            default:
+                return this.loadTexture(rockTexture);
+        }
+    }
+
     private createPlanet(): THREE.Mesh {
-        const geometry = new THREE.SphereGeometry(1, 32, 32);
+        const geometry = new THREE.SphereGeometry(1, 64, 64);
+        const texture = this.getPlanetTexture();
+        
         const material = new THREE.MeshPhongMaterial({
-            color: this.getPlanetColor(),
+            map: texture,
+            bumpMap: texture,
+            bumpScale: 0.05,
             shininess: 30,
-            specular: 0x333333
+            specular: 0x333333,
+            color: this.getPlanetColor() // Add base color in case texture fails to load
         });
+
+        // For gas giants, add atmosphere effects
+        if (this.planet.type === 'GAS_GIANT') {
+            material.transparent = true;
+            material.opacity = 0.9;
+            material.emissive = new THREE.Color(this.getPlanetColor());
+            material.emissiveIntensity = 0.2;
+        }
+
         return new THREE.Mesh(geometry, material);
     }
 
     private createResourcePatches(): THREE.Mesh[] {
         const patches: THREE.Mesh[] = [];
         const patchGeometry = new THREE.CircleGeometry(0.1, 32);
+        const patchTexture = this.loadTexture(resourcePatchTexture, true);
+
 
         // If planet has saved resource patches, use those positions
         if (this.planet.resourcePatches && this.planet.resourcePatches.length > 0) {
             this.planet.resourcePatches.forEach(patch => {
                 const patchMaterial = new THREE.MeshPhongMaterial({
+                    map: patchTexture,
                     color: this.getResourceColor(patch.resourceType),
                     transparent: true,
-                    opacity: 0.5,
-                    side: THREE.DoubleSide
+                    side: THREE.DoubleSide,
+                    bumpMap: patchTexture,
+                    bumpScale: 0.3,
                 });
 
                 const mesh = new THREE.Mesh(patchGeometry, patchMaterial);
                 mesh.position.copy(patch.position);
                 mesh.lookAt(0, 0, 0);
+                // Ensure texture is properly oriented
+                mesh.rotateZ(Math.PI);
                 mesh.userData.resource = patch.resource;
                 patches.push(mesh);
             });
@@ -329,7 +419,6 @@ class PlanetRenderer {
             // Generate new resource patches if none exist
             this.planet.resourcePatches = [];
             this.planet.resources.forEach(resource => {
-                // Generate random position on sphere surface
                 const phi = Math.acos(-1 + Math.random() * 2);
                 const theta = Math.random() * Math.PI * 2;
 
@@ -341,19 +430,22 @@ class PlanetRenderer {
                 const normal = position.clone().normalize();
 
                 const patchMaterial = new THREE.MeshPhongMaterial({
+                    map: patchTexture,
                     color: this.getResourceColor(resource.type),
                     transparent: true,
-                    opacity: 0.5,
-                    side: THREE.DoubleSide
+                    side: THREE.DoubleSide,
+                    bumpMap: patchTexture,
+                    bumpScale: 0.3,
                 });
 
                 const patch = new THREE.Mesh(patchGeometry, patchMaterial);
                 patch.position.copy(position);
                 patch.lookAt(0, 0, 0);
+                // Ensure texture is properly oriented
+                patch.rotateZ(Math.PI);
                 patch.userData.resource = resource;
                 patches.push(patch);
 
-                // Save the resource patch data
                 this.planet.resourcePatches.push({
                     id: patch.id.toString(),
                     resourceType: resource.type,
