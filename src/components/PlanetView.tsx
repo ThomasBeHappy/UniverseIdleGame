@@ -10,6 +10,8 @@ import rockTexture from '../assets/rock.png';
 import iceTexture from '../assets/ice.png';
 import gasTexture from '../assets/gas.png';
 import resourcePatchTexture from '../assets/ore.png';
+import { UnitController } from './UnitController';
+import { Unit, UnitType, UnitStatus } from '../types/units';
 
 interface PlanetViewProps {
     planet: Planet;
@@ -192,6 +194,34 @@ const CostList = styled.div`
   opacity: 0.8;
 `;
 
+const DebugMenu = styled.div`
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: white;
+    backdrop-filter: blur(4px);
+`;
+
+const DebugButton = styled.button`
+    padding: 8px 16px;
+    margin: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.2);
+    }
+`;
+
 class PlanetRenderer {
     private scene: THREE.Scene;
     private camera: THREE.PerspectiveCamera;
@@ -213,6 +243,7 @@ class PlanetRenderer {
     private isBuildMode: boolean;
     private tooltip: HTMLDivElement;
     private selectedBuildingType: BuildingType | null = null;
+    private unitController: UnitController | null = null;
 
     constructor(
         canvas: HTMLCanvasElement,
@@ -256,6 +287,17 @@ class PlanetRenderer {
         this.controls.minDistance = 3;
         this.controls.maxDistance = 10;
         this.controls.maxPolarAngle = Math.PI;
+        
+        // Use right mouse button for camera controls
+        this.controls.mouseButtons = {
+            LEFT: THREE.MOUSE.LEFT,
+            MIDDLE: THREE.MOUSE.MIDDLE,
+            RIGHT: THREE.MOUSE.ROTATE
+        };
+        
+        // Disable left-click and middle-click camera controls
+        this.controls.enablePan = false;  // Disable camera panning
+        this.controls.enableZoom = true;  // Keep zoom enabled (mouse wheel)
 
         // Setup raycaster
         this.raycaster = new THREE.Raycaster();
@@ -366,7 +408,7 @@ class PlanetRenderer {
     }
 
     private createPlanet(): THREE.Mesh {
-        const geometry = new THREE.SphereGeometry(1, 64, 64);
+        const geometry = new THREE.IcosahedronGeometry(1, 4); // Radius 1, detail level 4 for smooth appearance
         const texture = this.getPlanetTexture();
         
         const material = new THREE.MeshPhongMaterial({
@@ -375,7 +417,7 @@ class PlanetRenderer {
             bumpScale: 0.05,
             shininess: 30,
             specular: 0x333333,
-            color: this.getPlanetColor() // Add base color in case texture fails to load
+            color: this.getPlanetColor()
         });
 
         // For gas giants, add atmosphere effects
@@ -547,53 +589,77 @@ class PlanetRenderer {
     }
 
     private onClick = (event: MouseEvent) => {
-        if (!this.isBuildMode || !this.selectedBuildingType) return;
+        if (this.isBuildMode && this.selectedBuildingType) {
+            const rect = this.renderer.domElement.getBoundingClientRect();
+            this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-        const rect = this.renderer.domElement.getBoundingClientRect();
-        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            this.raycaster.setFromCamera(this.mouse, this.camera);
 
-        this.raycaster.setFromCamera(this.mouse, this.camera);
+            const intersects = this.raycaster.intersectObjects([this.planetMesh, ...this.buildings]);
 
-        const intersects = this.raycaster.intersectObjects([this.planetMesh, ...this.buildings]);
+            if (intersects.length > 0) {
+                const buildingIntersect = intersects.find(intersect => intersect.object.userData.building);
+                if (buildingIntersect) {
+                    return;
+                }
 
-        if (intersects.length > 0) {
-            const buildingIntersect = intersects.find(intersect => intersect.object.userData.building);
-            if (buildingIntersect) {
-                return;
-            }
+                const intersect = intersects[0];
+                const buildingDef = buildingDefinitions[this.selectedBuildingType];
 
-            const intersect = intersects[0];
-            const buildingDef = buildingDefinitions[this.selectedBuildingType];
+                if (!this.onCanBuyBuilding(buildingDef.cost)) {
+                    return;
+                }
 
-            if (!this.onCanBuyBuilding(buildingDef.cost)) {
-                return;
-            }
+                // Check if we're clicking on a resource patch
+                const resourcePatch = this.resourcePatches.find(patch => patch === intersect.object);
 
-            // Check if we're clicking on a resource patch
-            const resourcePatch = this.resourcePatches.find(patch => patch === intersect.object);
+                if (resourcePatch) {
+                    // Handle resource patch placement
+                    if (buildingDef.placeableOn === PlaceableOn.RESOURCE_PATCH) {
+                        const resource = resourcePatch.userData.resource;
+                        const building = this.createBuilding(
+                            intersect.point,
+                            intersect.face!.normal,
+                            this.selectedBuildingType
+                        );
 
-            if (resourcePatch) {
-                // Handle resource patch placement
-                if (buildingDef.placeableOn === PlaceableOn.RESOURCE_PATCH) {
-                    const resource = resourcePatch.userData.resource;
+                        // update player resources
+                        this.onBuyBuilding(buildingDef.cost);
+
+                        this.scene.add(building);
+                        this.buildings.push(building);
+
+                        this.onResourcePatchClick(resource);
+                        this.onBuildingCreated({
+                            id: building.id,
+                            type: this.selectedBuildingType,
+                            resourceType: resource.type,
+                            planetId: this.planet.id,
+                            starId: this.planet.starId,
+                            position: intersect.point,
+                            normal: intersect.face!.normal,
+                            rotation: building.rotation,
+                            placeableOn: buildingDef.placeableOn
+                        });
+
+                        this.setSelectedBuilding(null);
+                    }
+                } else if (buildingDef.placeableOn === PlaceableOn.LAND) {
+                    // Handle land placement
                     const building = this.createBuilding(
                         intersect.point,
                         intersect.face!.normal,
                         this.selectedBuildingType
                     );
 
-                    // update player resources
-                    this.onBuyBuilding(buildingDef.cost);
-
                     this.scene.add(building);
                     this.buildings.push(building);
 
-                    this.onResourcePatchClick(resource);
                     this.onBuildingCreated({
                         id: building.id,
                         type: this.selectedBuildingType,
-                        resourceType: resource.type,
+                        resourceType: '', // Empty string for land buildings
                         planetId: this.planet.id,
                         starId: this.planet.starId,
                         position: intersect.point,
@@ -604,31 +670,15 @@ class PlanetRenderer {
 
                     this.setSelectedBuilding(null);
                 }
-            } else if (buildingDef.placeableOn === PlaceableOn.LAND) {
-                // Handle land placement
-                const building = this.createBuilding(
-                    intersect.point,
-                    intersect.face!.normal,
-                    this.selectedBuildingType
-                );
-
-                this.scene.add(building);
-                this.buildings.push(building);
-
-                this.onBuildingCreated({
-                    id: building.id,
-                    type: this.selectedBuildingType,
-                    resourceType: '', // Empty string for land buildings
-                    planetId: this.planet.id,
-                    starId: this.planet.starId,
-                    position: intersect.point,
-                    normal: intersect.face!.normal,
-                    rotation: building.rotation,
-                    placeableOn: buildingDef.placeableOn
-                });
-
-                this.setSelectedBuilding(null);
             }
+        } else {
+            // Handle unit selection and movement
+            const rect = this.renderer.domElement.getBoundingClientRect();
+            this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            this.raycaster.setFromCamera(this.mouse, this.camera);
+            this.unitController?.handleClick(this.raycaster, this.planetMesh);
         }
     };
 
@@ -738,6 +788,10 @@ class PlanetRenderer {
         }
     }
 
+    getScene(): THREE.Scene {
+        return this.scene;
+    }
+
     animate() {
         requestAnimationFrame(() => this.animate());
         this.controls.update();
@@ -760,12 +814,18 @@ class PlanetRenderer {
         });
         document.body.removeChild(this.tooltip);
     }
+
+    setUnitController(unitController: UnitController) {
+        this.unitController = unitController;
+    }
 }
 
 export function PlanetView({ planet, width, height, onBack, onBuildingCreated, onBuyBuilding, onCanBuyBuilding }: PlanetViewProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const rendererRef = useRef<PlanetRenderer | null>(null);
+    const unitControllerRef = useRef<UnitController | null>(null);
     const [selectedBuilding, setSelectedBuilding] = useState<BuildingType | null>(null);
+    const [unitCount, setUnitCount] = useState(0);
 
     useEffect(() => {
         const container = containerRef.current;
@@ -796,6 +856,18 @@ export function PlanetView({ planet, width, height, onBack, onBuildingCreated, o
             }
         );
 
+        // Initialize UnitController and store in both refs
+        const unitController = new UnitController(rendererRef.current.getScene());
+        unitControllerRef.current = unitController;
+        rendererRef.current.setUnitController(unitController);
+
+        // Add update call to animation loop
+        const originalAnimate = rendererRef.current.animate;
+        rendererRef.current.animate = () => {
+            originalAnimate.call(rendererRef.current);
+            unitController.update(0.016); // Assuming 60fps for now
+        };
+
         rendererRef.current.animate();
 
         return () => {
@@ -803,9 +875,46 @@ export function PlanetView({ planet, width, height, onBack, onBuildingCreated, o
                 rendererRef.current.dispose();
                 rendererRef.current = null;
             }
+            if (unitControllerRef.current) {
+                unitControllerRef.current.dispose();
+                unitControllerRef.current = null;
+            }
             container.removeChild(canvas);
         };
     }, [planet, width, height]);
+
+    const spawnUnit = (type: UnitType) => {
+        if (!unitControllerRef.current) {
+            console.error('UnitController not initialized');
+            return;
+        }
+
+        // Create random position on or near planet surface
+        const phi = Math.random() * Math.PI * 2;
+        const theta = Math.acos(2 * Math.random() - 1);
+        const radius = 1.5; // Slightly above planet surface
+
+        const position = new THREE.Vector3(
+            radius * Math.sin(theta) * Math.cos(phi),
+            radius * Math.sin(theta) * Math.sin(phi),
+            radius * Math.cos(theta)
+        );
+
+        console.log('Spawning unit at position:', position);
+
+        const unit: Unit = {
+            id: `unit-${unitCount}`,
+            type,
+            position,
+            rotation: new THREE.Euler(),
+            velocity: new THREE.Vector3(),
+            status: UnitStatus.IDLE
+        };
+
+        unitControllerRef.current.addUnit(unit);
+        console.log('Unit added:', unit.id);
+        setUnitCount(prev => prev + 1);
+    };
 
     useEffect(() => {
         if (rendererRef.current) {
@@ -851,6 +960,18 @@ export function PlanetView({ planet, width, height, onBack, onBuildingCreated, o
                     ))}
                 </ul>
             </PlanetInfo>
+            <DebugMenu>
+                <h3>Debug Controls</h3>
+                <DebugButton onClick={() => spawnUnit(UnitType.SHIP)}>
+                    Spawn Ship
+                </DebugButton>
+                <DebugButton onClick={() => spawnUnit(UnitType.SATELLITE)}>
+                    Spawn Satellite
+                </DebugButton>
+                <DebugButton onClick={() => spawnUnit(UnitType.PROBE)}>
+                    Spawn Probe
+                </DebugButton>
+            </DebugMenu>
         </Container>
     );
 }

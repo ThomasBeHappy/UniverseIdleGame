@@ -405,7 +405,7 @@ export default function App() {
         return <div>Loading galaxy...</div>;
     }
 
-    return (
+  return (
         <Container>
             {gameStarted && playerFaction && (
                 <>
@@ -430,8 +430,8 @@ export default function App() {
                                         <div className="resource-name">
                                             <span className="resource-amount">{Math.floor(data.amount)}</span> units
                                             <span className="resource-rate">(+{data.rate.toFixed(1)}/s)</span>
-                                        </div>
-                                    </div>
+      </div>
+      </div>
                                 </ResourceItem>
                             </ResourceGroup>
                         ))}
