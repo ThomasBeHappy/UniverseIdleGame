@@ -12,6 +12,7 @@ import gasTexture from '../assets/gas.png';
 import resourcePatchTexture from '../assets/ore.png';
 import { UnitController } from './UnitController';
 import { Unit, UnitType, UnitStatus } from '../types/units';
+import { UnitDefinitions } from '../types/units';
 
 interface PlanetViewProps {
     planet: Planet;
@@ -889,10 +890,14 @@ export function PlanetView({ planet, width, height, onBack, onBuildingCreated, o
             return;
         }
 
-        // Create random position on or near planet surface
+        // Create random position on planet surface
         const phi = Math.random() * Math.PI * 2;
         const theta = Math.acos(2 * Math.random() - 1);
-        const radius = 1.5; // Slightly above planet surface
+
+        // Get unit definition to check category and stats
+        const unitDef = UnitDefinitions[type];
+        // Base radius is 1.0 (planet surface) plus the unit's altitude
+        const radius = 1.0 + unitDef.stats.altitude;
 
         const position = new THREE.Vector3(
             radius * Math.sin(theta) * Math.cos(phi),
@@ -908,7 +913,8 @@ export function PlanetView({ planet, width, height, onBack, onBuildingCreated, o
             position,
             rotation: new THREE.Euler(),
             velocity: new THREE.Vector3(),
-            status: UnitStatus.IDLE
+            status: UnitStatus.IDLE,
+            health: UnitDefinitions[type].stats.health
         };
 
         unitControllerRef.current.addUnit(unit);
@@ -962,15 +968,30 @@ export function PlanetView({ planet, width, height, onBack, onBuildingCreated, o
             </PlanetInfo>
             <DebugMenu>
                 <h3>Debug Controls</h3>
-                <DebugButton onClick={() => spawnUnit(UnitType.SHIP)}>
-                    Spawn Ship
-                </DebugButton>
-                <DebugButton onClick={() => spawnUnit(UnitType.SATELLITE)}>
-                    Spawn Satellite
-                </DebugButton>
-                <DebugButton onClick={() => spawnUnit(UnitType.PROBE)}>
-                    Spawn Probe
-                </DebugButton>
+                <div style={{ marginBottom: '10px' }}>
+                    <h4 style={{ margin: '5px 0' }}>Space Units</h4>
+                    <DebugButton onClick={() => spawnUnit(UnitType.SHIP)}>
+                        Spawn Ship
+                    </DebugButton>
+                    <DebugButton onClick={() => spawnUnit(UnitType.SATELLITE)}>
+                        Spawn Satellite
+                    </DebugButton>
+                    <DebugButton onClick={() => spawnUnit(UnitType.PROBE)}>
+                        Spawn Probe
+                    </DebugButton>
+                </div>
+                <div>
+                    <h4 style={{ margin: '5px 0' }}>Ground Units</h4>
+                    <DebugButton onClick={() => spawnUnit(UnitType.INFANTRY)}>
+                        Spawn Infantry
+                    </DebugButton>
+                    <DebugButton onClick={() => spawnUnit(UnitType.TANK)}>
+                        Spawn Tank
+                    </DebugButton>
+                    <DebugButton onClick={() => spawnUnit(UnitType.ARTILLERY)}>
+                        Spawn Artillery
+                    </DebugButton>
+                </div>
             </DebugMenu>
         </Container>
     );

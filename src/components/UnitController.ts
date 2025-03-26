@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Unit, UnitType, UnitStatus } from '../types/units';
+import { Unit, UnitType, UnitStatus, UnitDefinitions } from '../types/units';
 import { Planet } from '../types/galaxy';
 
 export class UnitController {
@@ -28,6 +28,9 @@ export class UnitController {
     }
 
     addUnit(unit: Unit): void {
+        // Initialize health from unit definition
+        unit.health = UnitDefinitions[unit.type].stats.health;
+        
         console.log('Adding unit:', unit);
         this.units.set(unit.id, unit);
         const mesh = this.createUnitMesh(unit);
@@ -39,6 +42,7 @@ export class UnitController {
 
     private createUnitMesh(unit: Unit): THREE.Mesh {
         let geometry: THREE.BufferGeometry;
+        let color: number = 0x4dabf7;
         
         switch(unit.type) {
             case UnitType.SHIP:
@@ -50,14 +54,54 @@ export class UnitController {
             case UnitType.PROBE:
                 geometry = new THREE.SphereGeometry(0.1, 16, 16);
                 break;
+            case UnitType.INFANTRY:
+                geometry = new THREE.CylinderGeometry(0.05, 0.05, 0.1, 8);
+                color = 0x00ff00;
+                break;
+            case UnitType.TANK:
+                // Create a more tank-like shape
+                const tankBody = new THREE.BoxGeometry(0.15, 0.06, 0.1);
+                const tankTurret = new THREE.CylinderGeometry(0.04, 0.04, 0.04, 8);
+                const tankBarrel = new THREE.CylinderGeometry(0.01, 0.01, 0.1, 8);
+                
+                // Position the turret and barrel
+                const turretMesh = new THREE.Mesh(tankTurret);
+                turretMesh.position.y = 0.03;
+                const barrelMesh = new THREE.Mesh(tankBarrel);
+                barrelMesh.position.z = 0.05;
+                barrelMesh.rotation.x = Math.PI / 2;
+                turretMesh.add(barrelMesh);
+
+                // Combine geometries
+                const tankMesh = new THREE.Mesh(tankBody);
+                tankMesh.add(turretMesh);
+                
+                color = 0x808080;
+                return tankMesh;
+            case UnitType.ARTILLERY:
+                // Create artillery piece shape
+                const base = new THREE.CylinderGeometry(0.08, 0.1, 0.05, 8);
+                const gun = new THREE.CylinderGeometry(0.02, 0.03, 0.2, 8);
+                
+                // Position the gun
+                const gunMesh = new THREE.Mesh(gun);
+                gunMesh.position.y = 0.05;
+                gunMesh.rotation.x = -Math.PI / 4; // 45-degree angle
+                
+                // Combine geometries
+                const artilleryMesh = new THREE.Mesh(base);
+                artilleryMesh.add(gunMesh);
+                
+                color = 0x8B4513;
+                return artilleryMesh;
             default:
                 geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
         }
 
         const material = new THREE.MeshPhongMaterial({
-            color: 0x4dabf7,
+            color: color,
             shininess: 50,
-            emissive: 0x2b5a7f,
+            emissive: new THREE.Color(color).multiplyScalar(0.4),
             emissiveIntensity: 0.5,
         });
 
@@ -65,13 +109,14 @@ export class UnitController {
         mesh.position.copy(unit.position);
         mesh.rotation.copy(unit.rotation);
         mesh.userData.unitId = unit.id;
-        mesh.userData.isUnit = true; // Add this flag to help identify unit meshes
+        mesh.userData.isUnit = true;
+        mesh.userData.unitType = unit.type;
 
-        // Add a small offset from the planet surface
+        // Add altitude offset based on unit type
+        const unitDef = UnitDefinitions[unit.type];
         const direction = mesh.position.clone().normalize();
-        mesh.position.add(direction.multiplyScalar(0.1));
+        mesh.position.add(direction.multiplyScalar(unitDef.stats.altitude));
 
-        console.log('Created unit mesh:', mesh);
         return mesh;
     }
 
@@ -124,7 +169,7 @@ export class UnitController {
         mesh.lookAt(mesh.position.clone().add(tangent));
     }
 
-    private calculatePathPoints(start: THREE.Vector3, end: THREE.Vector3, numPoints: number = 20): THREE.Vector3[] {
+    private calculatePathPoints(start: THREE.Vector3, end: THREE.Vector3, numPoints: number = 20, unitType: UnitType): THREE.Vector3[] {
         // Normalize both vectors to get points on unit sphere
         const startDir = start.clone().normalize();
         const endDir = end.clone().normalize();
@@ -132,14 +177,18 @@ export class UnitController {
         // Calculate the angle between start and end points
         const angle = startDir.angleTo(endDir);
 
+        // Get unit definition for proper altitude
+        const unitDef = UnitDefinitions[unitType];
+        const baseRadius = 1.0 + unitDef.stats.altitude;
+
         // Create interpolated points along the great circle
         const points: THREE.Vector3[] = [];
         for (let i = 0; i <= numPoints; i++) {
             const t = i / numPoints;
             const point = new THREE.Vector3().copy(startDir);
             point.lerp(endDir, t).normalize();
-            // Maintain constant altitude
-            point.multiplyScalar(1.5);
+            // Set proper altitude for unit type
+            point.multiplyScalar(baseRadius);
             points.push(point);
         }
 
@@ -171,7 +220,7 @@ export class UnitController {
                     if (!unit) return;
 
                     // Calculate path points around the planet surface
-                    const path = this.calculatePathPoints(selectedMesh.position, clickPoint);
+                    const path = this.calculatePathPoints(selectedMesh.position, clickPoint, 20, unit.type);
                     unit.path = path;
                     unit.pathIndex = 0;
                     unit.targetPosition = path[1]; // Set next point as immediate target
@@ -200,6 +249,7 @@ export class UnitController {
     private updateMovement(unit: Unit, mesh: THREE.Mesh, deltaTime: number): void {
         if (!unit.targetPosition || !unit.path || unit.pathIndex === undefined) return;
 
+        const unitDef = UnitDefinitions[unit.type];
         const direction = unit.targetPosition.clone().sub(unit.position);
         const distance = direction.length();
 
@@ -223,25 +273,44 @@ export class UnitController {
 
         // Calculate movement this frame
         direction.normalize();
-        const speed = 1.0; // Base speed
+        const speed = unitDef.stats.speed; // Use unit-specific speed
         const movement = direction.multiplyScalar(deltaTime * speed);
         
         // Update position
         unit.position.add(movement);
         
-        // Maintain constant altitude from planet surface
+        // Maintain proper altitude from planet surface
         const surfaceNormal = unit.position.clone().normalize();
-        const targetAltitude = 1.5; // Same as spawn height
-        unit.position.copy(surfaceNormal.multiplyScalar(targetAltitude));
+        const targetPosition = surfaceNormal.multiplyScalar(1.0 + unitDef.stats.altitude);
+        unit.position.lerp(targetPosition, 0.2); // Smooth transition to correct height
         
         mesh.position.copy(unit.position);
         
         // Make unit face movement direction while maintaining upright orientation
         if (unit.pathIndex < unit.path.length - 1) {
             const nextPoint = unit.path[unit.pathIndex + 1];
-            mesh.lookAt(nextPoint);
+            
+            // Calculate the up vector (normal to planet surface)
             const up = mesh.position.clone().normalize();
-            mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
+            
+            // Calculate the forward direction
+            const forward = nextPoint.clone().sub(mesh.position).normalize();
+            
+            // Calculate the right vector
+            const right = new THREE.Vector3().crossVectors(up, forward).normalize();
+            
+            // Recalculate forward to ensure it's perpendicular to up
+            forward.crossVectors(right, up);
+            
+            // Create rotation matrix
+            const rotationMatrix = new THREE.Matrix4();
+            rotationMatrix.makeBasis(right, up, forward);
+            
+            // Create quaternion from matrix
+            const targetQuaternion = new THREE.Quaternion().setFromRotationMatrix(rotationMatrix);
+            
+            // Smoothly interpolate to target rotation
+            mesh.quaternion.slerp(targetQuaternion, unitDef.stats.turnRate * deltaTime);
         }
     }
 
